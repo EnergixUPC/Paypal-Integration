@@ -1,14 +1,14 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { Stripe } from "stripe";
+import Stripe from "stripe";
 import { randomUUID } from "crypto";
 import { Sequelize, DataTypes } from "sequelize";
 
 dotenv.config();
 
 const app = express();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 /**
  * =========================
