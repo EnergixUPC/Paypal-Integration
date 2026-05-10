@@ -54,20 +54,20 @@ app.options(/.*/, cors(corsOptions));
 
 app.use(express.json());
 
-const sequelize = process.env.DATABASE_URL
-  ? new Sequelize(process.env.DATABASE_URL, {
-      dialect: "postgres",
-      dialectOptions: {
-        ssl: {
-          require: true,
-          rejectUnauthorized: false,
-        },
-      },
-      logging: console.log,
-    })
-  : new Sequelize("sqlite::memory:", {
-      logging: console.log,
-    });
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL environment variable is required");
+}
+
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
+  dialect: "postgres",
+  dialectOptions: {
+    ssl: {
+      require: true,
+      rejectUnauthorized: false,
+    },
+  },
+  logging: console.log,
+});
 
 const Payment = sequelize.define(
   "payment",
