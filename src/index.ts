@@ -8,6 +8,8 @@ import { Sequelize, DataTypes } from "sequelize";
 dotenv.config();
 
 const app = express();
+
+// Inicialización de Stripe
 // @ts-ignore
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -16,7 +18,6 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
  * CORS CONFIG
  * =========================
  */
-
 const allowedOrigins = ["http://localhost:4200", process.env.CLIENT_URL].filter(
   Boolean,
 );
@@ -35,15 +36,11 @@ const corsOptions = {
     }
 
     console.log("BLOCKED ORIGIN:", origin);
-
     // NO lanzar Error porque genera 500
     return callback(null, false);
   },
-
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-
   allowedHeaders: ["Content-Type", "Authorization"],
-
   credentials: true,
 };
 
@@ -51,9 +48,13 @@ app.use(cors(corsOptions));
 
 // IMPORTANTE PARA PREFLIGHT
 app.options(/.*/, cors(corsOptions));
-
 app.use(express.json());
 
+/**
+ * =========================
+ * DATABASE SETUP
+ * =========================
+ */
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
 }
@@ -66,7 +67,7 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
       rejectUnauthorized: false,
     },
   },
-  logging: console.log,
+  logging: false, // Desactivado en Vercel para no saturar los logs
 });
 
 const Payment = sequelize.define(
@@ -77,34 +78,28 @@ const Payment = sequelize.define(
       primaryKey: true,
       defaultValue: () => randomUUID(),
     },
-
     userId: {
       type: DataTypes.STRING(36),
       allowNull: false,
       field: "user_id",
     },
-
     amount: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
-
     currency: {
       type: DataTypes.STRING(3),
       allowNull: false,
       defaultValue: "pen",
     },
-
     status: {
       type: DataTypes.STRING(20),
       allowNull: false,
     },
-
     stripePaymentIntentId: {
       type: DataTypes.STRING(255),
       field: "stripe_payment_intent_id",
     },
-
     description: {
       type: DataTypes.TEXT,
     },
@@ -117,38 +112,17 @@ const Payment = sequelize.define(
 
 /**
  * =========================
- * INIT DATABASE
- * =========================
- */
-
-(async () => {
-  try {
-    await sequelize.authenticate();
-
-    console.log("Database connected successfully");
-
-    await sequelize.sync();
-
-    console.log("Database synchronized");
-  } catch (error) {
-    console.error("Database connection error:", error);
-  }
-})();
-
-/**
- * =========================
  * ROUTES
  * =========================
  */
 
 app.get("/", (req, res) => {
-  res.send("API de Pagos Activa");
+  res.send("API de Pagos Activa en Vercel 🚀");
 });
 
 /**
  * CREATE PAYMENT INTENT
  */
-
 app.post("/api/payments/create-intent", async (req, res) => {
   try {
     const { userId, amount, currency = "pen", description } = req.body;
@@ -163,9 +137,7 @@ app.post("/api/payments/create-intent", async (req, res) => {
       amount: Math.round(amount),
       currency,
       description,
-      metadata: {
-        userId,
-      },
+      metadata: { userId },
     });
 
     return res.json({
@@ -176,17 +148,13 @@ app.post("/api/payments/create-intent", async (req, res) => {
     });
   } catch (error) {
     console.error("CREATE INTENT ERROR:", error);
-
-    return res.status(500).json({
-      error: error.message,
-    });
+    return res.status(500).json({ error: error.message });
   }
 });
 
 /**
  * CONFIRM PAYMENT
  */
-
 app.post("/api/payments/confirm", async (req, res) => {
   try {
     const { paymentIntentId, userId } = req.body;
@@ -206,9 +174,7 @@ app.post("/api/payments/confirm", async (req, res) => {
     }
 
     const existingPayment = await Payment.findOne({
-      where: {
-        stripePaymentIntentId: paymentIntentId,
-      },
+      where: { stripePaymentIntentId: paymentIntentId },
     });
 
     if (existingPayment) {
@@ -227,44 +193,32 @@ app.post("/api/payments/confirm", async (req, res) => {
     return res.json(payment);
   } catch (error) {
     console.error("CONFIRM PAYMENT ERROR:", error);
-
-    return res.status(500).json({
-      error: error.message,
-    });
+    return res.status(500).json({ error: error.message });
   }
 });
 
 /**
  * PAYMENT HISTORY
  */
-
 app.get("/api/payments/history/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
 
     const payments = await Payment.findAll({
-      where: {
-        userId,
-      },
+      where: { userId },
       order: [["createdAt", "DESC"]],
     });
 
-    return res.json({
-      payments,
-    });
+    return res.json({ payments });
   } catch (error) {
     console.error("PAYMENT HISTORY ERROR:", error);
-
-    return res.status(500).json({
-      error: error.message,
-    });
+    return res.status(500).json({ error: error.message });
   }
 });
 
 /**
  * GET PAYMENT
  */
-
 app.get("/api/payments/:paymentId", async (req, res) => {
   try {
     const { paymentId } = req.params;
@@ -272,33 +226,25 @@ app.get("/api/payments/:paymentId", async (req, res) => {
     const payment = await Payment.findByPk(paymentId);
 
     if (!payment) {
-      return res.status(404).json({
-        error: "Payment not found",
-      });
+      return res.status(404).json({ error: "Payment not found" });
     }
 
     return res.json(payment);
   } catch (error) {
     console.error("GET PAYMENT ERROR:", error);
-
-    return res.status(500).json({
-      error: error.message,
-    });
+    return res.status(500).json({ error: error.message });
   }
 });
 
 /**
  * STRIPE CHECKOUT SESSION
  */
-
 app.post("/api/create-checkout-session", async (req, res) => {
   try {
     const { amount } = req.body;
 
     if (!amount || isNaN(amount) || amount <= 0) {
-      return res.status(400).json({
-        error: "Invalid amount",
-      });
+      return res.status(400).json({ error: "Invalid amount" });
     }
 
     const frontendUrl = process.env.CLIENT_URL || "http://localhost:4200";
@@ -308,30 +254,21 @@ app.post("/api/create-checkout-session", async (req, res) => {
         {
           price_data: {
             currency: "pen",
-            product_data: {
-              name: "Custom Payment",
-            },
+            product_data: { name: "Custom Payment" },
             unit_amount: Math.round(amount),
           },
           quantity: 1,
         },
       ],
-
       mode: "payment",
-
       success_url: `${frontendUrl}/success.html`,
       cancel_url: `${frontendUrl}/cancel.html`,
     });
 
-    return res.json({
-      url: session.url,
-    });
+    return res.json({ url: session.url });
   } catch (error) {
     console.error("CHECKOUT SESSION ERROR:", error);
-
-    return res.status(500).json({
-      error: error.message,
-    });
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -340,10 +277,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
  * ERROR HANDLER
  * =========================
  */
-
 app.use((err, req, res, next) => {
   console.error("GLOBAL ERROR:", err);
-
   return res.status(500).json({
     error: err.message || "Internal server error",
   });
@@ -351,8 +286,7 @@ app.use((err, req, res, next) => {
 
 /**
  * =========================
- * SERVER
+ * SERVER EXPORT PARA VERCEL
  * =========================
  */
-
 export default app;
